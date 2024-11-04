@@ -3,8 +3,10 @@ const { botToken } = require('./config');
 const fileController = require('./controllers/fileController');
 const fileView = require('./views/fileView');
 const sequelize = require('./database/db');
+const express = require('express');
+const path = require('path')
 
-const bot = require(botToken);
+const bot = new Bot(botToken);
 
 // Проверка подключения к БД
 (async () => {
@@ -19,15 +21,43 @@ const bot = require(botToken);
 // Сессия для хранения информации о формате
 bot.use(session({ initial: () => ({ targetFormat: '' }) }));
 
-bot.command('start', (ctx) => ctx.reply('Добро пожаловать!'));
+bot.command('begin', async (ctx) => {
+    await ctx.reply('Добро пожаловать! Пожалуйста, выберите формат для конвертаци');
+    await fileView.showConversionOptions(ctx);
+});
 
-// Обработчик документа и конвертирования
-bot.on('document', fileController.convertFile());
+bot.command('reset', async (ctx) => {
+    ctx.session.targetFormat = '';
+    await ctx.reply('Состояние сброшено. Используйте /begin, чтобы начать заново')
+})
 
-// Обработак выбора формата
-bot.callbackQuery(/to_(\w+)/, (ctx) => {
+// Обработчик выбора формата чезер callbackQuery
+bot.callbackQuery(/to_(\w+)/, async (ctx) => {
+    // Сохраняем выбранный формат в сессии пользователя
     ctx.session.targetFormat = ctx.match[1];
-    ctx.reply('Загрузите файл для конвертации');
+    await ctx.reply(`Вы выбрали формат: ${ctx.session.targetFormat}. Теперь загрузите файл для конвертации`);
+    await ctx.answerCallbackQuery();
+});
+
+// Обработчик для загруженных файлов
+bot.on('message:document', async (ctx) => {
+    if (!ctx.session.targetFormat) {
+        await ctx.reply('Пожалуйста, выберите формат для конвертации перед загрузкой файла');
+        return;
+    }
+
+    // Вызываем контроллер для обработки файла
+    await fileController.convertFile(ctx);
+});
+
+const app = express();
+const PORT = 3000;
+
+// Статический маршрут к папке /downloads
+app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
+
+app.listen(PORT, () => {
+    console.log(`File server is running on http://localhost:${PORT}`);
 });
 
 bot.start();
